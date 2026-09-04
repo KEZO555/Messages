@@ -1,0 +1,55 @@
+# Builds the tool APK in CI, so a release doesn't need a local Android
+# workspace. The build is a Gradle composite: `settings.gradle.kts` includes
+# `../light-sdk`, so the two repositories are checked out as siblings and the
+# SDK (chat service methods, the text-editor patches, the dev signing key)
+# comes from fenleon's fork.
+name: Build APK
+
+on:
+  push:
+    branches: [main, 'claude/**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out chats
+        uses: actions/checkout@v4
+        with:
+          path: chats
+
+      - name: Check out light-sdk
+        uses: actions/checkout@v4
+        with:
+          repository: fenleon/light-sdk
+          # Pinned so a change upstream can't silently break the build. Bump
+          # this when the tool needs a newer SDK patch.
+          ref: 07b23bb7a16cee60245a298963670ce6b466f4a0
+          path: light-sdk
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install the Android platform
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Assemble debug
+        working-directory: chats
+        # The SDK fork pins toolchain paths from its author's machine; they are
+        # absent here and the JDK above satisfies the 17 toolchain instead.
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: chats-devkeyboard-debug-apk
+          path: chats/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
