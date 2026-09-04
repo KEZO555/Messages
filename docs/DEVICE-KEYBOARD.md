@@ -73,6 +73,13 @@ anyway: the SDK's Gradle plugin scans every `.kt` file in the tool module and
 fails the build on `LocalContext`, `android.app.*` or `android.content.Context`
 imports, and on Activity casts. The editor stays inside that sandbox.
 
+## Version
+
+`app/lighttool.toml` carries `versionCode 70` / `versionName 0.10.1` — upstream
+0.10.0 plus this change. The SDK plugin validates the name as strict
+`major.minor.patch`, so the fork is not marked with a suffix; the tool id is
+unchanged, so this build installs over an existing Chats.
+
 ## Building
 
 Unchanged from upstream — the fork touches only `:app` sources. The build is a
