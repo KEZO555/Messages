@@ -842,7 +842,8 @@ private fun EncryptionRow(
     )
 }
 
-/** The LP3 keyboard editor for a single settings field. Result: the edited
+/** The text editor for a single settings field — the device keyboard, or the
+ *  LP3 keys when Settings → Device Keyboard is off. Result: the edited
  *  text (trimmed; "" clears the field). The keyboard is stripped — no emoji,
  *  return, or voice keys (the passes code-entry style, feedback 2026-08-19);
  *  the input centers vertically between the top bar and the keyboard. The
@@ -877,17 +878,28 @@ class FieldEditorScreen(
         val textState = rememberTextFieldState(initial)
 
         LightTheme(colors = themeColors) {
-            LightTextInputEditor(
+            ChatsTextInputEditor(
                 title = title,
                 state = textState,
-                keyboardOptionsFlow = keyboardOptionsFlow,
                 onSubmit = { result -> goBack(result.toString().trim()) },
                 onBack = { goBack() },
                 modifier = Modifier.background(LightThemeTokens.colors.background),
                 centered = true,
                 submitLabel = submitLabel,
                 submitIcon = submitIcon,
-            )
+            ) {
+                LightTextInputEditor(
+                    title = title,
+                    state = textState,
+                    keyboardOptionsFlow = keyboardOptionsFlow,
+                    onSubmit = { result -> goBack(result.toString().trim()) },
+                    onBack = { goBack() },
+                    modifier = Modifier.background(LightThemeTokens.colors.background),
+                    centered = true,
+                    submitLabel = submitLabel,
+                    submitIcon = submitIcon,
+                )
+            }
         }
     }
 }

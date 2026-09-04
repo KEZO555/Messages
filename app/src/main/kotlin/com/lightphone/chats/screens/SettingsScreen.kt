@@ -99,6 +99,13 @@ class SettingsViewModel : LightViewModel<Unit>() {
         }
     }
 
+    /** Persists the device-keyboard toggle (the screen supplies its DataStore). */
+    fun setDeviceKeyboard(lightContext: SealedLightContext, value: Boolean) {
+        viewModelScope.launch {
+            ChatSettings.setDeviceKeyboard(lightContext, value)
+        }
+    }
+
     /** Persists the data-saver toggle (the screen supplies its DataStore). */
     fun setDownloadOverMobile(lightContext: SealedLightContext, value: Boolean) {
         viewModelScope.launch {
@@ -126,6 +133,7 @@ class SettingsScreen(sealedActivity: SealedLightActivity) :
         val startingSync by viewModel.startingSync.collectAsState()
         val showReadStatus by ChatSettings.showReadStatus.collectAsState()
         val downloadOverMobile by ChatSettings.downloadOverMobile.collectAsState()
+        val deviceKeyboard by ChatSettings.deviceKeyboard.collectAsState()
         val themeColors by LightThemeController.colors.collectAsState()
 
         // Load the persisted toggle once (idempotent) before rendering it.
@@ -178,6 +186,24 @@ class SettingsScreen(sealedActivity: SealedLightActivity) :
                                 subtitle = "visible under your messages",
                                 onToggle = {
                                     viewModel.setShowReadStatus(lightContext, !showReadStatus)
+                                },
+                            )
+                            // This fork's switch: text entry uses the phone's
+                            // own keyboard (so an installed third-party IME
+                            // types into Chats) instead of the embedded LightOS
+                            // keys. Off falls back to the LP3 keyboard — the way
+                            // out when no IME is enabled on the phone and the
+                            // system keyboard never appears.
+                            ToggleRow(
+                                checked = deviceKeyboard,
+                                title = "Device Keyboard",
+                                subtitle = if (deviceKeyboard) {
+                                    "type with the phone's own keyboard"
+                                } else {
+                                    "type with the LightOS keyboard"
+                                },
+                                onToggle = {
+                                    viewModel.setDeviceKeyboard(lightContext, !deviceKeyboard)
                                 },
                             )
                             ToggleRow(

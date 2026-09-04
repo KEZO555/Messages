@@ -15,6 +15,20 @@
 
 
 
+# Chats (device-keyboard fork)
+
+> **This fork replaces the built-in LightOS keyboard with the phone's own
+> keyboard.** Every text field in the app — the composer, search, the login
+> fields, the recovery key — is a normal Android text field here, so whichever
+> IME you have installed and enabled (Gboard, HeliBoard, Unexpected Keyboard, …)
+> is the keyboard you type with. Settings → **Device Keyboard** switches back to
+> the upstream LightOS keys if you ever need them. See
+> [docs/DEVICE-KEYBOARD.md](docs/DEVICE-KEYBOARD.md) for how to install and
+> enable a keyboard on a Light Phone III, and for what changed in the code.
+>
+> Everything below is upstream's README
+> ([fenleon/chats](https://github.com/fenleon/chats)).
+
 # Chats
 A messaging tool for the Light Phone III. Connects all your chats, WhatsApp, Signal, Telegram, and more into one quiet, text-first interface. Log in with a [Beeper](https://beeper.com) account or a Matrix homeserver. Everything is end-to-end encrypted.
 

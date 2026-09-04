@@ -141,7 +141,9 @@ class ComposerScreen(
         // control that can't act. The return key stays (feedback 2026-08-20:
         // it was removed at the send-round, then the user wanted it back) —
         // it inserts a newline rather than sending (submitOnReturn = false):
-        // messages may span lines, and SEND lives in the top bar.
+        // messages may span lines, and SEND lives in the top bar. Only the LP3
+        // fallback editor reads these now (Settings → Device Keyboard off) —
+        // the system IME draws its own keys and its own return behaviour.
         val keyboardOptionsFlow = remember {
             MutableStateFlow(defaultKeyboardOptions().copy(displayVoice = false, displayReturn = true))
         }
@@ -159,12 +161,11 @@ class ComposerScreen(
 
         LightTheme(colors = themeColors) {
             Box(modifier = Modifier.fillMaxSize()) {
-                LightTextInputEditor(
+                ChatsTextInputEditor(
                     // An edit announces itself in the title slot (the room
                     // name's place); back (below) cancels it.
                     title = if (editTarget != null) "Editing Message" else roomName,
                     state = textState,
-                    keyboardOptionsFlow = keyboardOptionsFlow,
                     onSubmit = { viewModel.send(it, this@ComposerScreen) },
                     onBack = { goBack() },
                     modifier = Modifier.background(LightThemeTokens.colors.background),
@@ -184,7 +185,24 @@ class ComposerScreen(
                     submitInTopBar = true,
                     topBarSubmitIcon = LightIcons.SEND,
                     initialCaps = true,
-                )
+                ) {
+                    LightTextInputEditor(
+                        title = if (editTarget != null) "Editing Message" else roomName,
+                        state = textState,
+                        keyboardOptionsFlow = keyboardOptionsFlow,
+                        onSubmit = { viewModel.send(it, this@ComposerScreen) },
+                        onBack = { goBack() },
+                        modifier = Modifier.background(LightThemeTokens.colors.background),
+                        submitLabel = "Send",
+                        submitIcon = LightIcons.SEND,
+                        singleLine = false,
+                        submitOnReturn = false,
+                        bottomAligned = true,
+                        submitInTopBar = true,
+                        topBarSubmitIcon = LightIcons.SEND,
+                        initialCaps = true,
+                    )
+                }
                 // Clear-draft X, bottom-right corner of the screen (feedback
                 // 2026-08-21: the old 218 dp-above-keyboard position overlapped
                 // the draft's last line; the first bottom-right attempt

@@ -16,6 +16,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewModelScope
@@ -226,10 +227,9 @@ private fun QueryView(
             ),
         )
     }
-    LightTextInputEditor(
+    ChatsTextInputEditor(
         title = "Search Chats",
         state = textState,
-        keyboardOptionsFlow = keyboardOptionsFlow,
         onSubmit = { onSearch() },
         onBack = onBack,
         modifier = Modifier.background(LightThemeTokens.colors.background),
@@ -240,7 +240,23 @@ private fun QueryView(
         // the same treatment as the login field editors (design standard,
         // feedback 2026-08-22: the field sat flush under the top bar).
         centered = true,
-    )
+        // A search field: the device keyboard's action key says SEARCH and
+        // runs the search, like the LP3 keyboard's bottom-zone icon.
+        imeAction = ImeAction.Search,
+    ) {
+        LightTextInputEditor(
+            title = "Search Chats",
+            state = textState,
+            keyboardOptionsFlow = keyboardOptionsFlow,
+            onSubmit = { onSearch() },
+            onBack = onBack,
+            modifier = Modifier.background(LightThemeTokens.colors.background),
+            submitLabel = "Search",
+            submitIcon = LightIcons.SEARCH,
+            singleLine = true,
+            centered = true,
+        )
+    }
 }
 
 /** The results view: matching rooms alphabetically ("no chats found" when

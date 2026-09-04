@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewModelScope
 import com.lightphone.chats.ChatClient
+import com.lightphone.chats.ChatSettings
 import com.lightphone.chats.contactIdentifier
 import com.lightphone.chats.formatRelativeTimestamp
 import com.thelightphone.sdk.InitialScreen
@@ -425,6 +426,11 @@ class ChatListScreen(sealedActivity: SealedLightActivity) :
                 if (!granted) permissionLauncher?.launch()
             }
         }
+        // The tool-local settings back the editors' keyboard choice (Settings →
+        // Device Keyboard), so load them on the entry screen: search and the
+        // login field editors are reachable without ever opening Settings or a
+        // thread, and an unloaded preference would silently read as the default.
+        LaunchedEffect(Unit) { ChatSettings.load(lightContext) }
         val rooms by viewModel.rooms.collectAsState()
         val loading by viewModel.loading.collectAsState()
         val account by viewModel.account.collectAsState()

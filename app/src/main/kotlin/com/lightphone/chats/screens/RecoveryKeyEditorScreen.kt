@@ -69,10 +69,9 @@ class RecoveryKeyEditorScreen(
         }
 
         LightTheme(colors = themeColors) {
-            LightTextInputEditor(
+            ChatsTextInputEditor(
                 title = recoveryTitle(text.toString()),
                 state = textState,
-                keyboardOptionsFlow = keyboardOptionsFlow,
                 // Notes-style entry: the key sits just above the keyboard in
                 // small centered text, lines growing upward. The typography
                 // tokens carry no color, so copy the active content color —
@@ -92,7 +91,26 @@ class RecoveryKeyEditorScreen(
                 // Feedback pass: the action lives in the bottom bar (SUBMIT —
                 // bar text buttons are uppercase), the key stays bottom-anchored.
                 bottomAligned = true,
-            )
+                // The formatter inserts the newlines, so the field has to draw
+                // three lines; the user never types one (the action key
+                // submits).
+                singleLine = false,
+            ) {
+                LightTextInputEditor(
+                    title = recoveryTitle(text.toString()),
+                    state = textState,
+                    keyboardOptionsFlow = keyboardOptionsFlow,
+                    inputTextStyle = LightThemeTokens.typography.copy
+                        .copy(color = themeColors.content, textAlign = TextAlign.Center)
+                        .scaledForScreenHeight(),
+                    onSubmit = { result ->
+                        goBack(result.toString().filter { it.isLetterOrDigit() })
+                    },
+                    onBack = { goBack() },
+                    modifier = Modifier.background(LightThemeTokens.colors.background),
+                    bottomAligned = true,
+                )
+            }
         }
     }
 

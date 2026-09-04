@@ -15,6 +15,7 @@ object ChatSettings {
 
     private val KEY_SHOW_READ_STATUS = booleanPreferencesKey("chats.show_read_status")
     private val KEY_DOWNLOAD_OVER_MOBILE = booleanPreferencesKey("chats.download_over_mobile")
+    private val KEY_DEVICE_KEYBOARD = booleanPreferencesKey("chats.device_keyboard")
 
     /** Whether the thread shows "seen" under outgoing messages. Default on. */
     val showReadStatus = MutableStateFlow(true)
@@ -23,6 +24,13 @@ object ChatSettings {
      *  toggle shows the inverse of this flag (checked = saver ON). Defaults to
      *  mobile-allowed (feedback 2026-08-19: "Data Saver Mode … default OFF"). */
     val downloadOverMobile = MutableStateFlow(true)
+
+    /** Whether text entry uses the phone's own keyboard (the system IME, so a
+     *  third-party keyboard types into Chats) instead of the embedded LightOS
+     *  LP3 keyboard. This fork's reason for existing, so it defaults ON; the
+     *  Settings toggle switches back to the LP3 keys — the escape hatch for a
+     *  phone with no IME enabled, where the system keyboard never appears. */
+    val deviceKeyboard = MutableStateFlow(true)
 
     private var loaded = false
 
@@ -34,6 +42,7 @@ object ChatSettings {
             val prefs = lightContext.dataStore.data.first()
             showReadStatus.value = prefs[KEY_SHOW_READ_STATUS] ?: true
             downloadOverMobile.value = prefs[KEY_DOWNLOAD_OVER_MOBILE] ?: true
+            deviceKeyboard.value = prefs[KEY_DEVICE_KEYBOARD] ?: true
         }
     }
 
@@ -50,6 +59,14 @@ object ChatSettings {
         downloadOverMobile.value = value
         runCatching {
             lightContext.dataStore.edit { it[KEY_DOWNLOAD_OVER_MOBILE] = value }
+        }
+    }
+
+    /** Persists and publishes the device-keyboard toggle value. */
+    suspend fun setDeviceKeyboard(lightContext: SealedLightContext, value: Boolean) {
+        deviceKeyboard.value = value
+        runCatching {
+            lightContext.dataStore.edit { it[KEY_DEVICE_KEYBOARD] = value }
         }
     }
 }
