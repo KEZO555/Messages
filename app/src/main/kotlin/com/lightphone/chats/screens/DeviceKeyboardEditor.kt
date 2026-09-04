@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActionHandler
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
@@ -201,10 +200,13 @@ private fun DeviceKeyboardTextInputEditor(
                     // SEND lives in the top bar).
                     imeAction = if (submitOnReturn) imeAction else ImeAction.Default,
                 ),
-                onKeyboardAction = if (submitOnReturn) {
-                    KeyboardActionHandler { submit() }
-                } else {
-                    null
+                // A lambda literal rather than a named KeyboardActionHandler:
+                // the interface moved package between Compose versions, and the
+                // SAM conversion doesn't care where it lives. With
+                // ImeAction.Default (the composer) the IME sends a newline and
+                // never calls this, so the default action stays correct.
+                onKeyboardAction = { performDefaultAction ->
+                    if (submitOnReturn) submit() else performDefaultAction()
                 },
                 cursorBrush = SolidColor(LightThemeTokens.colors.content),
             )
