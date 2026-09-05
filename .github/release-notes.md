@@ -6,8 +6,8 @@ LightOS keys.
 
 **Installing**
 
-- A **debug-variant** APK signed with the light-sdk development key. Same
-  sideload route as upstream: Developer options → External tools → **All
+- An R8-minified **release** APK signed with the light-sdk development key.
+  Same sideload route as upstream: Developer options → External tools → **All
   tools**, then `adb install -r` (or Obtainium, tracking this repo).
 - The keyboard itself still has to be installed and enabled over ADB — LightOS
   ships no IME and no input-settings screen. Commands are in

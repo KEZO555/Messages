@@ -54,18 +54,23 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
             "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Assemble debug
+      - name: Assemble release
         working-directory: chats
+        # The release variant is R8-minified with resource shrinking, and signed
+        # with the SDK's dev key like the debug one. R8's keep rules for the
+        # reflective bits (JNA, the olm crypto backend) reach this run through
+        # :server's consumerProguardFiles.
+        #
         # The SDK fork pins toolchain paths from its author's machine; they are
         # absent here and the JDK above satisfies the 17 toolchain instead.
-        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
 
       - name: Name the APK after the tool version
         id: apk
         working-directory: chats
         run: |
           version=$(sed -n 's/^versionName = "\(.*\)"$/\1/p' app/lighttool.toml)
-          built=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          built=$(ls app/build/outputs/apk/release/*.apk | head -1)
           out="chats-devkeyboard-$version.apk"
           cp "$built" "$out"
           echo "file=$out" >> "$GITHUB_OUTPUT"
@@ -75,7 +80,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: chats-devkeyboard-debug-apk
+          name: chats-devkeyboard-apk
           path: ${{ steps.apk.outputs.path }}
           if-no-files-found: error
 
