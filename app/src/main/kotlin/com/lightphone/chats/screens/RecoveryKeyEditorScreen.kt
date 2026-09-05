@@ -95,6 +95,9 @@ class RecoveryKeyEditorScreen(
                 // three lines; the user never types one (the action key
                 // submits).
                 singleLine = false,
+                // A recovery key is a secret, and 48 random case-sensitive
+                // characters are exactly what an IME would "correct".
+                sensitive = true,
             ) {
                 LightTextInputEditor(
                     title = recoveryTitle(text.toString()),

@@ -65,6 +65,22 @@ Per-screen behaviour is carried over:
 - **Recovery key** — three lines (the formatter inserts the dashes and
   newlines as you type), the action key submits the clean 48-character key.
 
+## Secrets and the keyboard
+
+This is the one thing the fork changes that is not a convenience. The LightOS
+keyboard is drawn inside the app's own process, so nothing else ever saw what
+you typed. A system IME is a separate app, and everything typed into Chats now
+passes through it — including your Matrix password or access token and your
+recovery key.
+
+The password/token editor and the recovery-key editor therefore declare
+`KeyboardType.Password`, which is how Android tells an IME to drop the
+suggestion strip and keep the text out of its learned dictionary. Well-behaved
+keyboards honour it; a hostile or cloud-syncing one is under no obligation to.
+Choose the keyboard accordingly — an offline, open-source IME is the safe class
+of choice — or flip **Device Keyboard** off in Settings while you sign in and
+back on afterwards.
+
 No window plumbing is involved: `LightActivity` already calls
 `WindowCompat.setDecorFitsSystemWindows(window, false)` at start-up, so the IME
 insets reach Compose and `Modifier.imePadding()` keeps the bottom bar — and the

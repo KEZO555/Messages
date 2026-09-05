@@ -398,7 +398,9 @@ class AccountScreen(sealedActivity: SealedLightActivity) :
                                     // lives in the editor (feedback 2026-08-19).
                                     value = if (password.isBlank()) password else MASKED_SECRET,
                                     placeholder = if (tokenLogin) "syt_…" else "password",
-                                    onClick = { editField("Password", viewModel.password) },
+                                    // The password / access token never wants a keyboard's
+                                    // suggestions or dictionary (device-keyboard fork).
+                                    onClick = { editField("Password", viewModel.password, sensitive = true) },
                                 )
                                 TokenToggleRow(
                                     tokenLogin = tokenLogin,
@@ -462,10 +464,11 @@ class AccountScreen(sealedActivity: SealedLightActivity) :
         title: String,
         field: MutableStateFlow<String>,
         submitLabel: String = "SAVE",
+        sensitive: Boolean = false,
         onResult: (String) -> Unit = {},
     ) {
         navigateTo(screenFactory = {
-            FieldEditorScreen(it, title, field.value, submitLabel)
+            FieldEditorScreen(it, title, field.value, submitLabel, sensitive = sensitive)
         }) { value ->
             field.value = value
             onResult(value)
@@ -857,6 +860,9 @@ class FieldEditorScreen(
     private val initial: String,
     private val submitLabel: String = "SAVE",
     private val submitIcon: LightIconConfiguration? = null,
+    /** A secret (the password / access token): the device keyboard is told not
+     *  to suggest, autocorrect or learn from it. */
+    private val sensitive: Boolean = false,
 ) : SimpleLightScreen<String>(sealedActivity) {
 
     @Composable
@@ -887,6 +893,7 @@ class FieldEditorScreen(
                 centered = true,
                 submitLabel = submitLabel,
                 submitIcon = submitIcon,
+                sensitive = sensitive,
             ) {
                 LightTextInputEditor(
                     title = title,

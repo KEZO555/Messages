@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import com.lightphone.chats.ChatSettings
 import com.thelightphone.sdk.ui.LightBarButton
 import com.thelightphone.sdk.ui.LightBottomBar
@@ -74,6 +75,11 @@ internal fun ChatsTextInputEditor(
     centered: Boolean = false,
     inputTextStyle: TextStyle? = null,
     imeAction: ImeAction = ImeAction.Done,
+    /** A secret — a password, an access token, the recovery key. The LP3
+     *  keyboard is drawn in this process and sees nothing else, but a system
+     *  IME is a separate app: mark the field so it turns off suggestions,
+     *  autocorrect and personalised learning over what is typed here. */
+    sensitive: Boolean = false,
     lp3Editor: @Composable () -> Unit,
 ) {
     val deviceKeyboard by ChatSettings.deviceKeyboard.collectAsState()
@@ -98,6 +104,7 @@ internal fun ChatsTextInputEditor(
         centered = centered,
         inputTextStyle = inputTextStyle,
         imeAction = imeAction,
+        sensitive = sensitive,
     )
 }
 
@@ -126,6 +133,7 @@ private fun DeviceKeyboardTextInputEditor(
     centered: Boolean,
     inputTextStyle: TextStyle?,
     imeAction: ImeAction,
+    sensitive: Boolean,
 ) {
     // No window plumbing here: LightActivity calls
     // WindowCompat.setDecorFitsSystemWindows(window, false) at start-up, so the
@@ -190,6 +198,11 @@ private fun DeviceKeyboardTextInputEditor(
                     TextFieldLineLimits.MultiLine()
                 },
                 keyboardOptions = KeyboardOptions(
+                    // Password type on a secret field: IMEs answer it by
+                    // dropping the suggestion strip and keeping the text out of
+                    // the learned dictionary. It does not mask the text — the
+                    // editor shows what you type, same as upstream.
+                    keyboardType = if (sensitive) KeyboardType.Password else KeyboardType.Text,
                     capitalization = if (initialCaps) {
                         KeyboardCapitalization.Sentences
                     } else {
