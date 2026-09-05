@@ -127,3 +127,8 @@ will offer each new tagged build. Cutting one:
 # bump versionCode/versionName in app/lighttool.toml first (strict semver)
 git tag v0.10.1 && git push origin v0.10.1
 ```
+
+Without a git client to hand, the same thing from the Actions tab: **Build APK →
+Run workflow**, and fill in **release_tag** (e.g. `v0.10.1`) — the workflow
+creates that tag on the commit it just built and publishes the release from it.
+Leave the field empty for a plain build.

@@ -13,6 +13,13 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: >-
+          Publish a release from this run, creating this tag on the built
+          commit (e.g. v0.10.1). Leave empty to just build the APK.
+        required: false
+        default: ''
 
 jobs:
   apk:
@@ -75,14 +82,19 @@ jobs:
       # A v* tag publishes the APK as a release asset. One APK per release, so
       # Obtainium (or any installer that reads GitHub releases) has exactly one
       # thing to pick.
+      # Either route works: push a v* tag, or run the workflow with a
+      # release_tag input and gh creates that tag on the commit it just built
+      # (the route for anyone without a git client to hand).
       - name: Publish the release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
         working-directory: chats
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag || github.ref_name }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
+          gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
             --title "Chats ${{ steps.apk.outputs.version }} — device keyboard" \
             --notes-file .github/release-notes.md \
             "${{ steps.apk.outputs.file }}"
