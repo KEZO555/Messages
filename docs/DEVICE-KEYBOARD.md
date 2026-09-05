@@ -113,7 +113,17 @@ cd chats && ./gradlew :app:assembleDebug     # app/build/outputs/apk/debug/
 
 Needs JDK 17 and the Android platform 36 / build-tools 36.
 
-`.github/workflows/build-apk.yml` does exactly this on GitHub Actions and
-uploads the APK as a build artifact, so a release needs no local Android
-workspace — run it from the Actions tab (**Build APK → Run workflow**) and
-download `chats-devkeyboard-debug-apk` from the finished run.
+`.github/workflows/build-apk.yml` does exactly this on GitHub Actions, so a
+build needs no local Android workspace. Every push uploads the APK as a build
+artifact (Actions tab → the run → `chats-devkeyboard-debug-apk`); pushing a
+`v*` tag additionally publishes it as a **release asset**, named
+`chats-devkeyboard-<version>.apk`, with `.github/release-notes.md` as the body.
+
+That release is what an installer like [Obtainium](https://obtainium.imranr.dev)
+tracks — add `https://github.com/KEZO555/Messages` as a GitHub app source and it
+will offer each new tagged build. Cutting one:
+
+```bash
+# bump versionCode/versionName in app/lighttool.toml first (strict semver)
+git tag v0.10.1 && git push origin v0.10.1
+```
