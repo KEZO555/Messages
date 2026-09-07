@@ -57,6 +57,10 @@ class ComposerViewModel(
      *  SEND routes to [ChatClient.editMessage] and pops back with the edit
      *  result instead of sending a new message. */
     private val editTarget: LightServiceMethod.GetMessages.Message? = null,
+    /** When set, the message is sent as a reply to this one: the companion
+     *  hangs an m.in_reply_to relation off it, so bridged networks show it
+     *  quoting the original the way their own clients do. */
+    private val replyTarget: LightServiceMethod.GetMessages.Message? = null,
 ) : LightViewModel<ComposerResult>() {
 
     val busy = MutableStateFlow(false)
@@ -95,7 +99,7 @@ class ComposerViewModel(
                         screen.goBack(ComposerResult(body, editTarget.id, editTarget.timestampMs))
                     }
                 } else {
-                    val response = ChatClient.sendMessage(roomId, body)
+                    val response = ChatClient.sendMessage(roomId, body, replyTarget?.id)
                     if (response != null) {
                         screen.goBack(
                             ComposerResult(
@@ -124,12 +128,17 @@ class ComposerScreen(
     /** When set, the composer prefills this message's body and SEND edits it
      *  (Phase C, 2026-09-03, opened from the thread's context window). */
     private val editTarget: LightServiceMethod.GetMessages.Message? = null,
+    /** When set, SEND replies to this message (the context window's REPLY).
+     *  Mutually exclusive with [editTarget] in practice — the context window
+     *  opens one or the other. */
+    private val replyTarget: LightServiceMethod.GetMessages.Message? = null,
 ) : LightScreen<ComposerResult, ComposerViewModel>(sealedActivity) {
 
     override val viewModelClass: Class<ComposerViewModel>
         get() = ComposerViewModel::class.java
 
-    override fun createViewModel(): ComposerViewModel = ComposerViewModel(roomId, editTarget)
+    override fun createViewModel(): ComposerViewModel =
+        ComposerViewModel(roomId, editTarget, replyTarget)
 
     @Composable
     override fun Content() {
@@ -152,9 +161,14 @@ class ComposerScreen(
         // keeps the text until it's sent or cleared. An edit (Phase C)
         // prefills the row's body instead and never touches the draft — a
         // cancelled edit must not leak into the next normal composer.
-        val textState = rememberTextFieldState(editTarget?.body ?: composerDrafts[roomId] ?: "")
+        // A reply starts empty and is never saved as the room's draft: the
+        // draft carries no relation, so restoring it into a plain composer
+        // would silently send an unrelated message (same reasoning as an edit).
+        val textState = rememberTextFieldState(
+            editTarget?.body ?: if (replyTarget != null) "" else composerDrafts[roomId] ?: "",
+        )
         LaunchedEffect(textState.text) {
-            if (editTarget != null) return@LaunchedEffect
+            if (editTarget != null || replyTarget != null) return@LaunchedEffect
             val text = textState.text.toString()
             if (text.isEmpty()) composerDrafts.remove(roomId) else composerDrafts[roomId] = text
         }
@@ -164,7 +178,7 @@ class ComposerScreen(
                 ChatsTextInputEditor(
                     // An edit announces itself in the title slot (the room
                     // name's place); back (below) cancels it.
-                    title = if (editTarget != null) "Editing Message" else roomName,
+                    title = composerTitle(editTarget, replyTarget, roomName),
                     state = textState,
                     onSubmit = { viewModel.send(it, this@ComposerScreen) },
                     onBack = { goBack() },
@@ -187,7 +201,7 @@ class ComposerScreen(
                     initialCaps = true,
                 ) {
                     LightTextInputEditor(
-                        title = if (editTarget != null) "Editing Message" else roomName,
+                        title = composerTitle(editTarget, replyTarget, roomName),
                         state = textState,
                         keyboardOptionsFlow = keyboardOptionsFlow,
                         onSubmit = { viewModel.send(it, this@ComposerScreen) },
@@ -241,4 +255,21 @@ class ComposerScreen(
             }
         }
     }
+}
+
+/** The composer's title slot: an edit and a reply announce themselves in the
+ *  room name's place, so the screen always says what SEND is about to do.
+ *  A reply names the sender it answers ("Reply to Ada"); the top bar elides a
+ *  long name rather than wrapping. */
+private fun composerTitle(
+    editTarget: LightServiceMethod.GetMessages.Message?,
+    replyTarget: LightServiceMethod.GetMessages.Message?,
+    roomName: String,
+): String = when {
+    editTarget != null -> "Editing Message"
+    replyTarget != null -> replyTarget.senderName
+        .takeIf { it.isNotBlank() && !replyTarget.isMine }
+        ?.let { "Reply to $it" }
+        ?: "Reply"
+    else -> roomName
 }

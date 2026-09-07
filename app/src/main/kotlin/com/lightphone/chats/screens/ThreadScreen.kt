@@ -1520,7 +1520,8 @@ class ThreadScreen(
                 onLike = { contextTarget?.let { viewModel.setReaction(it, LIKE_KEY) } },
                 onReact = { key -> contextTarget?.let { viewModel.setReaction(it, key) } },
                 onRemoveReaction = { contextTarget?.let { viewModel.removeReaction(it) } },
-                onEdit = { contextTarget?.let { openComposer(it) } },
+                onEdit = { contextTarget?.let { openComposer(edit = it) } },
+                onReply = { contextTarget?.let { openComposer(replyTo = it) } },
                 onUnsend = { contextTarget?.let { unsendConfirm = it } },
                 // SAVE (image rows only — the context window's image addition,
                 // LP3 feedback 2026-09-03): the same server-side save the
@@ -1614,13 +1615,18 @@ class ThreadScreen(
         }
     }
 
-    private fun openComposer(edit: LightServiceMethod.GetMessages.Message? = null) {
-        navigateTo(screenFactory = { ComposerScreen(it, room.id, room.name, edit) }) { result ->
+    private fun openComposer(
+        edit: LightServiceMethod.GetMessages.Message? = null,
+        replyTo: LightServiceMethod.GetMessages.Message? = null,
+    ) {
+        navigateTo(screenFactory = { ComposerScreen(it, room.id, room.name, edit, replyTo) }) { result ->
             if (result != null) {
                 if (edit == null) {
                     // The message went out — drop the restored draft so the
-                    // next open starts clean (feedback 2026-08-22).
-                    composerDrafts.remove(room.id)
+                    // next open starts clean (feedback 2026-08-22). A reply
+                    // never wrote that draft and must not clear it either: the
+                    // room may hold an unrelated half-written message.
+                    if (replyTo == null) composerDrafts.remove(room.id)
                     // Show the sent message immediately (optimistic echo); the
                     // poll replaces the row with the real event once sync lands.
                     viewModel.addOptimistic(

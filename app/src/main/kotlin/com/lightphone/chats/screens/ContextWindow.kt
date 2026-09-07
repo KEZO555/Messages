@@ -85,6 +85,9 @@ fun ContextWindowOverlay(
     onRemoveReaction: () -> Unit,
     onEdit: () -> Unit,
     onUnsend: () -> Unit,
+    /** REPLY — opens the composer with an m.in_reply_to relation on this row.
+     *  Offered on every message, own ones included. */
+    onReply: () -> Unit,
     /** Non-null on image rows: the SAVE row (the viewer's save flow). */
     onSave: (() -> Unit)? = null,
     onDismiss: () -> Unit,
@@ -110,10 +113,12 @@ fun ContextWindowOverlay(
                     // Own message: the message controls, each only while the
                     // row still allows it (bridge caps / window).
                     message.isMine -> buildList {
+                        add("REPLY" to { onReply(); onDismiss() })
                         if (message.canEdit) add("EDIT" to { onEdit(); onDismiss() })
                         if (message.canUnsend) add("UNSEND" to { onUnsend(); onDismiss() })
                     }
                     ownReaction == null -> buildList {
+                        add("REPLY" to { onReply(); onDismiss() })
                         add("LIKE" to { onLike(); onDismiss() })
                         add("REACT" to { level = ContextLevel.Reactions })
                         // Image rows carry SAVE (LP3 feedback 2026-09-03). The
@@ -124,6 +129,7 @@ fun ContextWindowOverlay(
                         onSave?.let { save -> add("SAVE" to { save() }) }
                     }
                     else -> buildList {
+                        add("REPLY" to { onReply(); onDismiss() })
                         add("EDIT REACTION" to { level = ContextLevel.Reactions })
                         add("REMOVE REACTION" to { onRemoveReaction(); onDismiss() })
                         // Same deferred dismissal as the no-reaction SAVE row.

@@ -2,6 +2,8 @@ package com.lightphone.chats.screens
 
 import android.Manifest
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.items
@@ -30,6 +33,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewModelScope
 import com.lightphone.chats.ChatClient
@@ -64,6 +68,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /** Grow the list slice when the last visible row is within this many of the end. */
 private const val REVEAL_THRESHOLD = 4
@@ -193,6 +198,21 @@ class ChatListViewModel : LightViewModel<Unit>() {
                 panelPinned.value = flags.pinned
                 panelArchived.value = flags.archived
             }
+        }
+    }
+
+    /**
+     * Marks [room] read from the list (the swipe-right gesture): the companion
+     * posts the read receipt at the room's newest event and serves unread 0
+     * for it straight away (its pendingReadClear), so the quiet refresh below
+     * drops the asterisk without waiting for a sync round.
+     */
+    fun markRoomRead(room: LightServiceMethod.GetRooms.Room) {
+        val eventId = room.lastEventId ?: return
+        if (room.unreadCount <= 0) return
+        viewModelScope.launch {
+            ChatClient.markRead(room.id, eventId)
+            refresh(quiet = true)
         }
     }
 
@@ -640,6 +660,7 @@ class ChatListScreen(sealedActivity: SealedLightActivity) :
                                             room = room,
                                             onOpen = { openThread(room) },
                                             onLongPress = { openContact(room) },
+                                            onMarkRead = { viewModel.markRoomRead(room) },
                                         )
                                     }
                                 }
@@ -748,14 +769,49 @@ private fun RoomRow(
     room: LightServiceMethod.GetRooms.Room,
     onOpen: () -> Unit,
     onLongPress: () -> Unit,
+    onMarkRead: () -> Unit,
 ) {
     val currentOnOpen by rememberUpdatedState(onOpen)
     val currentOnLongPress by rememberUpdatedState(onLongPress)
+    val currentOnMarkRead by rememberUpdatedState(onMarkRead)
     val haptic = LocalHapticFeedback.current
     val currentHapticsEnabled by rememberUpdatedState(LocalHapticsEnabled.current)
+    // Swipe right to mark read. The row follows the finger (clamped to the
+    // right, up to [SwipeTravel]) so the gesture reads as a drag rather than a
+    // dead zone, and springs back on release whether or not it passed the
+    // threshold. Only unread rows respond — a swipe on a read row is inert.
+    val unread = room.unreadCount > 0
+    var dragOffset by remember(room.id) { mutableStateOf(0f) }
+    val swipeOffset by animateFloatAsState(
+        targetValue = dragOffset,
+        label = "roomRowSwipe",
+    )
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .offset { IntOffset(swipeOffset.roundToInt(), 0) }
+            .pointerInput(room.id, unread) {
+                if (!unread) return@pointerInput
+                val travel = SwipeTravel.toPx()
+                val trigger = SwipeTrigger.toPx()
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        val passed = dragOffset >= trigger
+                        dragOffset = 0f
+                        if (passed) {
+                            if (currentHapticsEnabled) {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            }
+                            currentOnMarkRead()
+                        }
+                    },
+                    onDragCancel = { dragOffset = 0f },
+                ) { _, dragAmount ->
+                    // Rightward only: a left drag stays at rest rather than
+                    // pulling the row off the other edge.
+                    dragOffset = (dragOffset + dragAmount).coerceIn(0f, travel)
+                }
+            }
             // Long-press opens the contact panel (2026-08-29). Trigger-only
             // haptics (LP3 feedback 2026-09-03): the buzz fires when the
             // gesture actually completes — on a genuine tap into the room
@@ -866,3 +922,13 @@ private fun StatusText(text: String) {
         )
     }
 }
+
+/** How far a room row follows a mark-read swipe before it stops travelling —
+ *  about the width of the leading marker slot plus the name's indent, so the
+ *  row visibly moves without sliding out from under its own text. */
+private val SwipeTravel = 72.dp
+
+/** How far the swipe has to get to actually mark the room read. Comfortably
+ *  past the touch slop, comfortably short of [SwipeTravel], so a deliberate
+ *  drag lands it and a stray horizontal wobble while scrolling does not. */
+private val SwipeTrigger = 48.dp
