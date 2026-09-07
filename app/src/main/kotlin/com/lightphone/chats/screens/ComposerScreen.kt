@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewModelScope
 import com.lightphone.chats.ChatClient
+import com.lightphone.chats.splitReplyQuote
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.LightViewModel
 import com.thelightphone.sdk.SealedLightActivity
@@ -165,7 +166,8 @@ class ComposerScreen(
         // draft carries no relation, so restoring it into a plain composer
         // would silently send an unrelated message (same reasoning as an edit).
         val textState = rememberTextFieldState(
-            editTarget?.body ?: if (replyTarget != null) "" else composerDrafts[roomId] ?: "",
+            editTarget?.let { splitReplyQuote(it.body).second }
+                ?: if (replyTarget != null) "" else composerDrafts[roomId] ?: "",
         )
         LaunchedEffect(textState.text) {
             if (editTarget != null || replyTarget != null) return@LaunchedEffect

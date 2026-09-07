@@ -181,3 +181,46 @@ private val MONTH_YEAR_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("
 /** "Dec 10, 2025" — month abbreviation + day + year, for previous-year
  *  timestamps in the THREAD's message times (feedback 2026-08-21). */
 private val MONTH_DAY_YEAR_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("MMM dd, yyyy")
+
+/**
+ * Splits Matrix's rich-reply fallback off a message body: a reply arrives as
+ * quoted lines, a blank line, then the actual reply —
+ *
+ *     > <@ada:beeper.local> the message being answered
+ *     (blank)
+ *     the reply
+ *
+ * Returns the quoted text (flattened to one line, the `<@user>` marker
+ * removed) and the reply on its own. Upstream discarded the quote in the
+ * companion; this fork keeps it on thread rows so the reply can show what it
+ * answers, and every consumer of a row body splits it here — the reply half is
+ * what gets re-sent on a retry, compared against optimistic echoes, prefilled
+ * into an edit, and shown in the unsend confirmation.
+ *
+ * Bodies without a fallback (every message that isn't a reply, and our own
+ * replies — Trixnity writes the relation without a fallback) come back as
+ * `null to body`, so callers can use this unconditionally.
+ */
+fun splitReplyQuote(body: String): Pair<String?, String> {
+    if (!body.startsWith("> ")) return null to body
+    val split = body.indexOf("\n\n")
+    if (split == -1) return null to body
+    val quoted = body.substring(0, split)
+        .lines()
+        .map { it.removePrefix(">").trim() }
+        .filter { it.isNotBlank() }
+    if (quoted.isEmpty()) return null to body
+    // The first quoted line carries the "<@user:server>" attribution; the
+    // sender is already named by the row it points at, so drop the marker and
+    // keep the words.
+    val head = quoted.first().let { line ->
+        if (line.startsWith("<") && line.contains(">")) line.substringAfter(">").trim() else line
+    }
+    val quote = (listOf(head) + quoted.drop(1)).joinToString(" ").trim()
+    val reply = body.substring(split + 2).trimStart()
+    // A quote with nothing after it is not a reply worth splitting (a message
+    // that merely starts with "> ").
+    if (quote.isBlank() || reply.isBlank()) return null to body
+    return quote to reply
+}
+

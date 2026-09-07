@@ -16,10 +16,31 @@ to set it. So a reply sent here is a real Matrix reply, and a bridged network
 (WhatsApp, Signal, Telegram) shows it quoting the original the way its own
 client would.
 
-**What it does not do yet:** the thread does not *draw* the quote. The SDK's
-`GetMessages.Message` carries no reply fields, so a reply — yours or theirs —
-renders as an ordinary message here. Showing the quoted line would need a new
-field on that shared model, which lives in the SDK, not in this repo.
+### Showing the quote
+
+A reply row draws the message it answers as a quiet one-line quote above the
+reply — `> the message being answered`, Superfine and ellipsised, the same
+grammar as the "forwarded" and "edited" tags.
+
+The quote is Matrix's own **rich-reply fallback**: bridged clients put the
+answered message at the top of the reply body as `> <@ada:server> …`, a blank
+line, then the reply. Upstream's companion threw that away
+(`stripReplyQuote`); this fork keeps it on thread rows — previews and
+notifications still strip it, so the room list shows words, not quotes — and
+the tool splits it with `splitReplyQuote` in `Format.kt`.
+
+Because the fallback rides in the body, **every consumer of a row body splits
+it**: the reply half is what a retry re-sends, what optimistic echoes are
+matched against, what an edit prefills, and what the unsend confirmation
+shows. Add a new consumer and it must do the same, or the quoted lines leak
+into a real message.
+
+**The limit:** your own replies show no quote. Trixnity writes the
+`m.in_reply_to` relation without a fallback body, so there is nothing to split
+— the relation is there (the recipient's client quotes correctly), but this
+screen has no quoted text to draw. Fixing that properly needs reply fields on
+`GetMessages.Message`, which lives in the SDK: a fork of `fenleon/light-sdk`,
+deliberately not taken here.
 
 A reply is never saved as the room's draft, and sending one never clears a
 draft you already had: the draft carries no relation, so restoring it into a

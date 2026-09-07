@@ -2505,7 +2505,9 @@ object MatrixRepository {
             val edit = editByTarget[m.id]
             if (edit != null && m.contentType == "text" && !m.id.startsWith(LOCAL_PENDING_ID_PREFIX)) {
                 out = out.copy(
-                    body = stripOwnPrefix(stripForwardHeader(stripReplyQuote(edit.first.body)).first, ownName),
+                    // Same as the row build: the reply fallback stays on thread
+                    // rows for the tool to split (previews strip it).
+                    body = stripOwnPrefix(stripForwardHeader(edit.first.body).first, ownName),
                     edited = true,
                 )
             } else if (edit != null) {
@@ -8550,7 +8552,12 @@ object MatrixRepository {
                 // the original when the target is in the page (2026-08-27).
                 // Broadcast channels bake the user's own name into echoed posts
                 // ("FENN: post") — stripped when ownName is set (2026-08-28).
-                val (stripped, fwd) = stripForwardHeader(stripReplyQuote(editedBody ?: content.body))
+                // The reply fallback stays ON thread rows (device-keyboard
+                // fork): the tool splits it with splitReplyQuote and draws the
+                // quoted line above the reply, so a bridged reply shows what it
+                // answers. Previews and notifications still strip it below —
+                // the room list wants the words, not the quote.
+                val (stripped, fwd) = stripForwardHeader(editedBody ?: content.body)
                 forwarded = fwd
                 val text = stripOwnPrefix(stripped, ownName)
                 if (text.isBlank()) return null

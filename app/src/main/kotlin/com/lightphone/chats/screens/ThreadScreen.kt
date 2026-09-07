@@ -54,6 +54,7 @@ import com.lightphone.chats.ChatSettings
 import com.lightphone.chats.VolumePanelOverlay
 import com.lightphone.chats.VolumePanelState
 import com.lightphone.chats.contactIdentifier
+import com.lightphone.chats.splitReplyQuote
 import com.lightphone.chats.dayOf
 import com.lightphone.chats.formatMessageTime
 import com.thelightphone.sdk.LightScreen
@@ -628,7 +629,7 @@ class ThreadViewModel(
                 continue
             }
             val echoed = loaded.any {
-                it.isMine && it.body == pending.body &&
+                it.isMine && splitReplyQuote(it.body).second == pending.body &&
                     kotlin.math.abs(it.timestampMs - pending.timestampMs) < OPTIMISTIC_MATCH_WINDOW_MS
             }
             if (echoed) {
@@ -1029,7 +1030,10 @@ class ThreadViewModel(
         // Edits: the served row now carries the overlaid body (or was unsent —
         // a redacted row never matches a body).
         editOverlays.value = editOverlays.value.filterNot { (eventId, body) ->
-            page.any { it.id == eventId && (it.body == body || it.contentType == "redacted") }
+            page.any {
+                it.id == eventId &&
+                    (splitReplyQuote(it.body).second == body || it.contentType == "redacted")
+            }
         }
         // Unsends: the served row is the tombstone (same id).
         unsentOverlays.value = unsentOverlays.value.filterNot { eventId ->
@@ -1047,17 +1051,20 @@ class ThreadViewModel(
      * "only try twice, then just show 'failed to deliver'").
      */
     fun resendAsNew(message: LightServiceMethod.GetMessages.Message) {
-        if (message.body.isBlank()) return
+        // The reply half only: re-sending a body with its fallback quote would
+        // post the quoted lines as literal text.
+        val retryBody = splitReplyQuote(message.body).second
+        if (retryBody.isBlank()) return
         if (resendChainState.attemptsFor(message.id) >= MAX_RESEND_ATTEMPTS) return
         viewModelScope.launch {
-            val response = ChatClient.sendMessage(room.id, message.body) ?: return@launch
+            val response = ChatClient.sendMessage(room.id, retryBody) ?: return@launch
             resendChainState.recordResend(message.id, response.eventId ?: "local-${response.transactionId}")
             addOptimistic(
                 LightServiceMethod.GetMessages.Message(
                     id = response.eventId ?: "local-${response.transactionId}",
                     sender = "",
                     senderName = "",
-                    body = message.body,
+                    body = retryBody,
                     timestampMs = System.currentTimeMillis(),
                     isMine = true,
                 ),
@@ -1722,7 +1729,7 @@ private fun UnsendConfirmPanel(
                     align = TextAlign.Center,
                 )
                 LightText(
-                    text = target.body.ifBlank { "[Message]" },
+                    text = splitReplyQuote(target.body).second.ifBlank { "[Message]" },
                     variant = LightTextVariant.Paragraph,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
@@ -2087,11 +2094,27 @@ private fun MessageRow(
                     onOpenContext = contextGesture,
                 )
             } else {
+                // A reply carries Matrix's fallback quote at the top of its
+                // body. The quote renders as a quiet line above the reply —
+                // Superfine, one line, ellipsised — the same grammar as the
+                // "forwarded" and "edited" tags, so the answered message is
+                // identifiable without the row growing into a bubble. The body
+                // below is the reply alone.
+                val (replyQuote, bodyText) = splitReplyQuote(message.body)
+                if (replyQuote != null) {
+                    LightText(
+                        text = "> $replyQuote",
+                        variant = LightTextVariant.Superfine,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 1.dp),
+                    )
+                }
                 if (message.isMine) {
                     // Outgoing: block sized to the first line so the top line's
                     // last word always touches the right edge (see
                     // [OutgoingBodyText]).
-                    OutgoingBodyText(message.body, bodyMaxWidthPx)
+                    OutgoingBodyText(bodyText, bodyMaxWidthPx)
                 } else if (message.forwarded) {
                     // Forwarded incoming text: the ↷ glyph anchors the left,
                     // beside the body like the call notices' phone icon. It
@@ -2126,7 +2149,7 @@ private fun MessageRow(
                                     .padding(2.5.dp),
                             )
                             LightText(
-                                text = message.body,
+                                text = bodyText,
                                 variant = LightTextVariant.Paragraph,
                                 modifier = Modifier.padding(start = 0.5f.gridUnitsAsDp()),
                             )
@@ -2137,7 +2160,7 @@ private fun MessageRow(
                             modifier = Modifier.padding(top = 1.dp),
                         )
                     }
-                } else if (message.body.startsWith("Incoming call")) {
+                } else if (bodyText.startsWith("Incoming call")) {
                     // Bridged call notices ("Incoming call. Use the WhatsApp
                     // app to answer." — Beeper's bridges can't relay calls, so
                     // the contact's ghost posts a plain m.text; the phone icon
@@ -2153,14 +2176,14 @@ private fun MessageRow(
                             contentDescription = null, // the text carries it
                         )
                         LightText(
-                            text = message.body,
+                            text = bodyText,
                             variant = LightTextVariant.Paragraph,
                             modifier = Modifier.padding(start = 0.75f.gridUnitsAsDp()),
                         )
                     }
                 } else {
                     LightText(
-                        text = message.body,
+                        text = bodyText,
                         variant = LightTextVariant.Paragraph,
                         modifier = Modifier.padding(top = 1.dp),
                     )
