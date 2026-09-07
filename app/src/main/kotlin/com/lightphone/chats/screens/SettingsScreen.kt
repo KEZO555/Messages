@@ -58,6 +58,11 @@ class SettingsViewModel : LightViewModel<Unit>() {
     val account = MutableStateFlow<LightServiceMethod.GetAccountState.Response?>(null)
     val connection = MutableStateFlow<LightServiceMethod.GetConnectionState.Response?>(null)
 
+    /** Bridged-network labels for the Default Network picker, derived the same
+     *  way the chat list derives its Networks panel: whatever the companion
+     *  tagged the current rooms with. */
+    val networks = MutableStateFlow<List<String>>(emptyList())
+
     /** True between the user turning sync on and the companion reporting "syncing". */
     val startingSync = MutableStateFlow(false)
 
@@ -72,6 +77,7 @@ class SettingsViewModel : LightViewModel<Unit>() {
         viewModelScope.launch {
             account.value = ChatClient.accountState()
             connection.value = ChatClient.connectionState()
+            networks.value = ChatClient.getRooms().mapNotNull { it.network }.distinct().sorted()
             if (connection.value?.state == "syncing") startingSync.value = false
         }
     }
@@ -96,6 +102,13 @@ class SettingsViewModel : LightViewModel<Unit>() {
     fun setShowReadStatus(lightContext: SealedLightContext, value: Boolean) {
         viewModelScope.launch {
             ChatSettings.setShowReadStatus(lightContext, value)
+        }
+    }
+
+    /** Persists the default-network choice (the screen supplies its DataStore). */
+    fun setDefaultNetwork(lightContext: SealedLightContext, value: String?) {
+        viewModelScope.launch {
+            ChatSettings.setDefaultNetwork(lightContext, value)
         }
     }
 
@@ -134,6 +147,8 @@ class SettingsScreen(sealedActivity: SealedLightActivity) :
         val showReadStatus by ChatSettings.showReadStatus.collectAsState()
         val downloadOverMobile by ChatSettings.downloadOverMobile.collectAsState()
         val deviceKeyboard by ChatSettings.deviceKeyboard.collectAsState()
+        val defaultNetwork by ChatSettings.defaultNetwork.collectAsState()
+        val networks by viewModel.networks.collectAsState()
         val themeColors by LightThemeController.colors.collectAsState()
 
         // Load the persisted toggle once (idempotent) before rendering it.
@@ -166,6 +181,34 @@ class SettingsScreen(sealedActivity: SealedLightActivity) :
                                     else "Sign In"
                                 } ?: "…",
                                 onClick = { navigateTo(screenFactory = { AccountScreen(it) }) },
+                            )
+                            // Which network the chat list opens on. "All" is
+                            // upstream's behaviour; picking one means the list
+                            // starts filtered, with the Networks panel still
+                            // free to switch for the rest of the session.
+                            SettingsRow(
+                                label = "Default Network",
+                                value = defaultNetwork ?: "All",
+                                onClick = {
+                                    navigateTo(
+                                        screenFactory = {
+                                            // Keep the saved choice in the list
+                                            // even before the room census has
+                                            // arrived (or if its network went
+                                            // away), so the panel always shows
+                                            // what is currently set.
+                                            AccountsScreen(
+                                                it,
+                                                (networks + listOfNotNull(defaultNetwork))
+                                                    .distinct()
+                                                    .sorted(),
+                                                defaultNetwork,
+                                            )
+                                        },
+                                    ) { choice ->
+                                        viewModel.setDefaultNetwork(lightContext, choice?.label)
+                                    }
+                                },
                             )
                             val syncEnabled = connection?.syncEnabled ?: true
                             ToggleRow(

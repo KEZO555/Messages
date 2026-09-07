@@ -122,6 +122,33 @@ class ChatListViewModel : LightViewModel<Unit>() {
     /** Selected bridged-network label (Phase 7); null = all networks. */
     val networkFilter = MutableStateFlow<String?>(null)
 
+    /** The saved default (Settings → Default Network) is applied once, to the
+     *  first list of the session: re-showing the list after a thread must not
+     *  undo a switch made from the Networks panel. */
+    private var defaultNetworkApplied = false
+
+    /** True while [networkFilter] holds the saved default rather than a choice
+     *  made from the Networks panel — only such a filter is cleared when the
+     *  network turns out not to exist any more. */
+    private var filterFromDefault = false
+
+    /** Opens the list on the saved default network (no-op for "All", and after
+     *  the first call). */
+    fun applyDefaultNetwork(network: String?) {
+        if (defaultNetworkApplied) return
+        defaultNetworkApplied = true
+        if (network == null) return
+        networkFilter.value = network
+        filterFromDefault = true
+    }
+
+    /** The Networks panel's choice: a deliberate pick, so it outranks the
+     *  saved default and survives the staleness check above. */
+    fun selectNetwork(network: String?) {
+        filterFromDefault = false
+        networkFilter.value = network
+    }
+
     /**
      * Contact-panel state for the long-press entry (2026-08-29): long-pressing
      * a room row opens the same contact panel as the thread's name, seeded from
@@ -318,6 +345,16 @@ class ChatListViewModel : LightViewModel<Unit>() {
                 }
                 this@ChatListViewModel.account.value = account
                 rooms.value = result
+                // A saved default naming a network that no longer exists (the
+                // bridge was removed, or a different account signed in) would
+                // otherwise open an empty list under that network's name. A
+                // pick made in the Networks panel is never touched.
+                if (filterFromDefault && result.isNotEmpty() &&
+                    result.none { it.network == networkFilter.value }
+                ) {
+                    filterFromDefault = false
+                    networkFilter.value = null
+                }
                 this@ChatListViewModel.connection.value = connection
                 // POST_NOTIFICATIONS stays denied until requested at runtime
                 // (targetSdk 33+ — a fresh install never prompts on its own),
@@ -430,7 +467,10 @@ class ChatListScreen(sealedActivity: SealedLightActivity) :
         // Device Keyboard), so load them on the entry screen: search and the
         // login field editors are reachable without ever opening Settings or a
         // thread, and an unloaded preference would silently read as the default.
-        LaunchedEffect(Unit) { ChatSettings.load(lightContext) }
+        LaunchedEffect(Unit) {
+            ChatSettings.load(lightContext)
+            viewModel.applyDefaultNetwork(ChatSettings.defaultNetwork.value)
+        }
         val rooms by viewModel.rooms.collectAsState()
         val loading by viewModel.loading.collectAsState()
         val account by viewModel.account.collectAsState()
@@ -645,7 +685,7 @@ class ChatListScreen(sealedActivity: SealedLightActivity) :
                                 navigateTo(
                                     screenFactory = { AccountsScreen(it, networks, networkFilter) },
                                 ) { choice ->
-                                    viewModel.networkFilter.value = choice?.label
+                                    viewModel.selectNetwork(choice?.label)
                                 }
                             },
                             contentDescription = "Networks",

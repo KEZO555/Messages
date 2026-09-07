@@ -26,6 +26,10 @@
 > [docs/DEVICE-KEYBOARD.md](docs/DEVICE-KEYBOARD.md) for how to install and
 > enable a keyboard on a Light Phone III, and for what changed in the code.
 >
+> It also adds Settings → **Default Network**: the chat list opens on the
+> network you pick (WhatsApp, Signal, …) instead of All, with the Networks
+> panel still free to switch from there.
+>
 > Everything below is upstream's README
 > ([fenleon/chats](https://github.com/fenleon/chats)).
 

@@ -1,6 +1,7 @@
 package com.lightphone.chats
 
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.edit
 import com.thelightphone.sdk.SealedLightContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,6 +17,7 @@ object ChatSettings {
     private val KEY_SHOW_READ_STATUS = booleanPreferencesKey("chats.show_read_status")
     private val KEY_DOWNLOAD_OVER_MOBILE = booleanPreferencesKey("chats.download_over_mobile")
     private val KEY_DEVICE_KEYBOARD = booleanPreferencesKey("chats.device_keyboard")
+    private val KEY_DEFAULT_NETWORK = stringPreferencesKey("chats.default_network")
 
     /** Whether the thread shows "seen" under outgoing messages. Default on. */
     val showReadStatus = MutableStateFlow(true)
@@ -32,6 +34,12 @@ object ChatSettings {
      *  phone with no IME enabled, where the system keyboard never appears. */
     val deviceKeyboard = MutableStateFlow(true)
 
+    /** The bridged network the chat list opens on — "WhatsApp", "Signal", … as
+     *  the companion labels them. null = all networks, the upstream behaviour
+     *  and the default. Only the first list of a session honours it; the
+     *  Networks panel still switches freely from there. */
+    val defaultNetwork = MutableStateFlow<String?>(null)
+
     private var loaded = false
 
     /** Loads the persisted values once (idempotent); call from any screen's scope. */
@@ -43,6 +51,7 @@ object ChatSettings {
             showReadStatus.value = prefs[KEY_SHOW_READ_STATUS] ?: true
             downloadOverMobile.value = prefs[KEY_DOWNLOAD_OVER_MOBILE] ?: true
             deviceKeyboard.value = prefs[KEY_DEVICE_KEYBOARD] ?: true
+            defaultNetwork.value = prefs[KEY_DEFAULT_NETWORK]
         }
     }
 
@@ -67,6 +76,17 @@ object ChatSettings {
         deviceKeyboard.value = value
         runCatching {
             lightContext.dataStore.edit { it[KEY_DEVICE_KEYBOARD] = value }
+        }
+    }
+
+    /** Persists and publishes the default-network choice; null ("All") removes
+     *  the key rather than storing a sentinel. */
+    suspend fun setDefaultNetwork(lightContext: SealedLightContext, value: String?) {
+        defaultNetwork.value = value
+        runCatching {
+            lightContext.dataStore.edit { prefs ->
+                if (value == null) prefs.remove(KEY_DEFAULT_NETWORK) else prefs[KEY_DEFAULT_NETWORK] = value
+            }
         }
     }
 }

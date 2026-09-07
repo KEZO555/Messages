@@ -1,5 +1,8 @@
 # Device keyboard
 
+(The fork's other change, Settings → Default Network, is documented in
+[DEFAULT-NETWORK.md](DEFAULT-NETWORK.md).)
+
 Upstream Chats types with the **LightOS keyboard**: every editor is the SDK's
 `LightTextInputEditor`, which draws the closed `light-keyboard` component inside
 the app's own window. It is not an Android input method, so an IME you install
@@ -91,7 +94,7 @@ imports, and on Activity casts. The editor stays inside that sandbox.
 
 ## Version
 
-`app/lighttool.toml` carries `versionCode 71` / `versionName 0.10.2` — upstream
+`app/lighttool.toml` carries `versionCode 72` / `versionName 0.10.3` — upstream
 0.10.0 plus this change. The SDK plugin validates the name as strict
 `major.minor.patch`, so the fork is not marked with a suffix; the tool id is
 unchanged, so this build installs over an existing Chats.
@@ -125,10 +128,10 @@ will offer each new tagged build. Cutting one:
 
 ```bash
 # bump versionCode/versionName in app/lighttool.toml first (strict semver)
-git tag v0.10.2 && git push origin v0.10.2
+git tag v0.10.3 && git push origin v0.10.3
 ```
 
 Without a git client to hand, the same thing from the Actions tab: **Build APK →
-Run workflow**, and fill in **release_tag** (e.g. `v0.10.2`) — the workflow
+Run workflow**, and fill in **release_tag** (e.g. `v0.10.3`) — the workflow
 creates that tag on the commit it just built and publishes the release from it.
 Leave the field empty for a plain build.
