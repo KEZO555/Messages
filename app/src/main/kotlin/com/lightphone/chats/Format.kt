@@ -6,6 +6,8 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
+import java.util.Locale
 
 /**
  * Relative timestamp for room rows: 24-hour time of day for today ("14:02" —
@@ -28,17 +30,11 @@ fun formatRelativeTimestamp(timestampMs: Long): String {
     return when {
         date == today -> dateTime.toLocalTime().format(ROW_TIME_FORMAT)
         date == today.minusDays(1) -> "Yest"
-        date.isAfter(today.minusDays(7)) -> SHORT_DAY_NAMES[date.dayOfWeek.value - 1]
+        date.isAfter(today.minusDays(7)) -> date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.US)
         date.year == today.year -> date.format(MONTH_DAY_FORMAT)
         else -> date.format(MONTH_YEAR_FORMAT)
     }
 }
-
-/** Full capitalized weekday names (ISO: Monday=1 … Sunday=7), for thread day tags. */
-private val DAY_NAMES = arrayOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
-
-/** Short capitalized weekday names (ISO: Monday=1 … Sunday=7), for room rows. */
-private val SHORT_DAY_NAMES = arrayOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 /**
  * Timestamp for a message row in the thread: the time plus a day tag when the
@@ -59,7 +55,7 @@ fun formatMessageTime(timestampMs: Long): String {
     val tag = when {
         date == today -> null
         date == today.minusDays(1) -> "Yesterday"
-        date.isAfter(today.minusDays(7)) -> DAY_NAMES[date.dayOfWeek.value - 1]
+        date.isAfter(today.minusDays(7)) -> date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.US)
         date.year == today.year -> date.format(MONTH_DAY_FORMAT)
         else -> date.format(MONTH_DAY_YEAR_FORMAT)
     }
@@ -78,7 +74,7 @@ fun dayOf(timestampMs: Long): LocalDate =
  * 1 (US/Canada, 1 + 10), 2 (Germany/France/…, 2 + 9..11), else 3. Non-phone
  * strings pass through unchanged.
  */
-fun formatBridgePhone(raw: String): String {
+private fun formatBridgePhone(raw: String): String {
     val digits = raw.trim().removePrefix("+").filter { it.isDigit() }
     if (digits.length < 10) return raw
     val ccLen = when {
@@ -184,22 +180,13 @@ private val MONTH_DAY_YEAR_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPatte
 
 /**
  * Splits Matrix's rich-reply fallback off a message body: a reply arrives as
- * quoted lines, a blank line, then the actual reply —
- *
- *     > <@ada:beeper.local> the message being answered
- *     (blank)
- *     the reply
- *
- * Returns the quoted text (flattened to one line, the `<@user>` marker
- * removed) and the reply on its own. Upstream discarded the quote in the
- * companion; this fork keeps it on thread rows so the reply can show what it
- * answers, and every consumer of a row body splits it here — the reply half is
- * what gets re-sent on a retry, compared against optimistic echoes, prefilled
- * into an edit, and shown in the unsend confirmation.
- *
- * Bodies without a fallback (every message that isn't a reply, and our own
- * replies — Trixnity writes the relation without a fallback) come back as
- * `null to body`, so callers can use this unconditionally.
+ * quoted lines, a blank line, then the actual reply. Returns the quoted text
+ * (flattened to one line, the `<@user>` marker removed) and the reply on its
+ * own. Upstream's companion discarded the quote; this fork keeps it on thread
+ * rows so a reply can show what it answers, and every consumer of a row body
+ * splits it here — the reply half is what gets re-sent on a retry, compared
+ * against optimistic echoes, prefilled into an edit, and shown in the unsend
+ * confirmation. Bodies without a fallback come back as `null to body`.
  */
 fun splitReplyQuote(body: String): Pair<String?, String> {
     if (!body.startsWith("> ")) return null to body
@@ -210,16 +197,11 @@ fun splitReplyQuote(body: String): Pair<String?, String> {
         .map { it.removePrefix(">").trim() }
         .filter { it.isNotBlank() }
     if (quoted.isEmpty()) return null to body
-    // The first quoted line carries the "<@user:server>" attribution; the
-    // sender is already named by the row it points at, so drop the marker and
-    // keep the words.
     val head = quoted.first().let { line ->
         if (line.startsWith("<") && line.contains(">")) line.substringAfter(">").trim() else line
     }
     val quote = (listOf(head) + quoted.drop(1)).joinToString(" ").trim()
     val reply = body.substring(split + 2).trimStart()
-    // A quote with nothing after it is not a reply worth splitting (a message
-    // that merely starts with "> ").
     if (quote.isBlank() || reply.isBlank()) return null to body
     return quote to reply
 }

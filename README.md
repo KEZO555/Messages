@@ -15,7 +15,7 @@
 
 
 
-# Chats (device-keyboard fork)
+# Messages (device-keyboard fork)
 
 > **This fork replaces the built-in LightOS keyboard with the phone's own
 > keyboard.** Every text field in the app — the composer, search, the login
@@ -30,6 +30,11 @@
 > right to mark it read**, and Settings → **Default Network**: the chat list opens on the
 > network you pick (WhatsApp, Signal, …) instead of All, with the Networks
 > panel still free to switch from there.
+>
+> Tracks upstream **v0.18.0**. (Upstream's 0.19.x needs SDK members that
+> `fenleon/light-sdk` has not published yet — `Message.replyToId` and friends,
+> `LightTextInputEditor(topTag=…)` — so this fork sits on the newest release
+> that builds against the public SDK.)
 >
 > Everything below is upstream's README
 > ([fenleon/chats](https://github.com/fenleon/chats)).

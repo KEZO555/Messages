@@ -72,45 +72,42 @@ class RecoveryKeyEditorScreen(
             ChatsTextInputEditor(
                 title = recoveryTitle(text.toString()),
                 state = textState,
-                // Notes-style entry: the key sits just above the keyboard in
-                // small centered text, lines growing upward. The typography
-                // tokens carry no color, so copy the active content color —
-                // without it BasicText falls back to black-on-black on the dark
-                // theme and the key is unreadable. Copy-sized (was paragraph) —
-                // feedback 2026-08-19: slightly bigger, the 3-line key still
-                // fits above the keyboard.
                 inputTextStyle = LightThemeTokens.typography.copy
                     .copy(color = themeColors.content, textAlign = TextAlign.Center)
                     .scaledForScreenHeight(),
                 onSubmit = { result ->
-                    // Submit the clean key (case preserved, no separators).
                     goBack(result.toString().filter { it.isLetterOrDigit() })
                 },
                 onBack = { goBack() },
                 modifier = Modifier.background(LightThemeTokens.colors.background),
-                // Feedback pass: the action lives in the bottom bar (SUBMIT —
-                // bar text buttons are uppercase), the key stays bottom-anchored.
                 bottomAligned = true,
-                // The formatter inserts the newlines, so the field has to draw
-                // three lines; the user never types one (the action key
-                // submits).
+                // The formatter inserts the newlines; the user never types one.
                 singleLine = false,
-                // A recovery key is a secret, and 48 random case-sensitive
-                // characters are exactly what an IME would "correct".
+                // 48 random case-sensitive characters are the last thing that
+                // should reach a keyboard's dictionary or autocorrect.
                 sensitive = true,
             ) {
                 LightTextInputEditor(
                     title = recoveryTitle(text.toString()),
                     state = textState,
                     keyboardOptionsFlow = keyboardOptionsFlow,
+                    // Notes-style entry: the key sits just above the keyboard in
+                    // small centered text, lines growing upward. The typography
+                    // tokens carry no color, so copy the active content color —
+                    // without it BasicText falls back to black-on-black on the dark
+                    // theme and the key is unreadable. Copy-sized — slightly bigger
+                    // than paragraph, so the 3-line key still fits above the keyboard.
                     inputTextStyle = LightThemeTokens.typography.copy
                         .copy(color = themeColors.content, textAlign = TextAlign.Center)
                         .scaledForScreenHeight(),
                     onSubmit = { result ->
+                        // Submit the clean key (case preserved, no separators).
                         goBack(result.toString().filter { it.isLetterOrDigit() })
                     },
                     onBack = { goBack() },
                     modifier = Modifier.background(LightThemeTokens.colors.background),
+                    // Feedback pass: the action lives in the bottom bar (SUBMIT —
+                    // bar text buttons are uppercase), the key stays bottom-anchored.
                     bottomAligned = true,
                 )
             }

@@ -34,10 +34,9 @@ object ChatSettings {
      *  phone with no IME enabled, where the system keyboard never appears. */
     val deviceKeyboard = MutableStateFlow(true)
 
-    /** The bridged network the chat list opens on — "WhatsApp", "Signal", … as
-     *  the companion labels them. null = all networks, the upstream behaviour
-     *  and the default. Only the first list of a session honours it; the
-     *  Networks panel still switches freely from there. */
+    /** The bridged network the chat list opens on. null = all networks, the
+     *  upstream behaviour and the default. Only the first list of a session
+     *  honours it; the Networks panel switches freely from there. */
     val defaultNetwork = MutableStateFlow<String?>(null)
 
     private var loaded = false
@@ -74,9 +73,7 @@ object ChatSettings {
     /** Persists and publishes the device-keyboard toggle value. */
     suspend fun setDeviceKeyboard(lightContext: SealedLightContext, value: Boolean) {
         deviceKeyboard.value = value
-        runCatching {
-            lightContext.dataStore.edit { it[KEY_DEVICE_KEYBOARD] = value }
-        }
+        runCatching { lightContext.dataStore.edit { it[KEY_DEVICE_KEYBOARD] = value } }
     }
 
     /** Persists and publishes the default-network choice; null ("All") removes

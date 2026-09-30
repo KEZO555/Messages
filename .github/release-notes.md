@@ -1,8 +1,17 @@
-Chats with the phone's own keyboard instead of the LightOS one: every text
-field — the composer, search, the login fields, the recovery key — is a normal
-Android text field, so whichever IME you have installed and enabled is the
-keyboard you type with. Settings → **Device Keyboard** switches back to the
-LightOS keys.
+Upstream [fenleon/chats](https://github.com/fenleon/chats) with the phone's own
+keyboard instead of the LightOS one, plus two small additions of its own.
+
+**This fork adds**
+
+- **Device keyboard** — every text field (composer, search, login fields,
+  recovery key) is a normal Android text field, so whichever IME you have
+  installed and enabled is the keyboard you type with. Settings → **Device
+  Keyboard** switches back to the LightOS keys.
+- **Default Network** (Settings) — the chat list opens on the network you pick
+  instead of All; the Networks panel still switches freely from there.
+- **Swipe a chat right to mark it read.**
+- **Reply** — long-press a message → REPLY; bridged networks show it quoting
+  the original, and a reply you receive shows the quoted line above it.
 
 **Installing**
 
@@ -24,5 +33,4 @@ which well-behaved keyboards honour — prefer an offline, open-source one, or
 turn Device Keyboard off while signing in.
 
 Built from this tag by GitHub Actions against
-[fenleon/light-sdk](https://github.com/fenleon/light-sdk). Upstream:
-[fenleon/chats](https://github.com/fenleon/chats).
+[fenleon/light-sdk](https://github.com/fenleon/light-sdk).

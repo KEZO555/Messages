@@ -28,18 +28,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.lifecycle.viewModelScope
 import com.lightphone.chats.ChatClient
 import com.lightphone.chats.ChatSettings
 import com.lightphone.chats.contactIdentifier
 import com.lightphone.chats.formatRelativeTimestamp
+import com.lightphone.chats.server.MatrixRepository
 import com.thelightphone.sdk.InitialScreen
 import com.thelightphone.sdk.LightScreen
 import com.thelightphone.sdk.LightViewModel
@@ -60,7 +59,6 @@ import com.thelightphone.sdk.ui.LightThemeController
 import com.thelightphone.sdk.ui.LightThemeTokens
 import com.thelightphone.sdk.ui.LightTopBar
 import com.thelightphone.sdk.ui.LightTopBarCenter
-import com.thelightphone.sdk.ui.LocalHapticsEnabled
 import com.thelightphone.sdk.ui.gridUnitsAsDp
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -72,9 +70,6 @@ import kotlin.math.roundToInt
 
 /** Grow the list slice when the last visible row is within this many of the end. */
 private const val REVEAL_THRESHOLD = 4
-
-/** Live flag poll for the long-press contact panel (same cadence as the thread). */
-private const val PANEL_FLAG_SYNC_MS = 3_000L
 
 /** Shown while the initial sync pulls the whole account (can take minutes). */
 private const val DOWNLOADING_TEXT = "Downloading your chat history…"
@@ -132,9 +127,9 @@ class ChatListViewModel : LightViewModel<Unit>() {
      *  undo a switch made from the Networks panel. */
     private var defaultNetworkApplied = false
 
-    /** True while [networkFilter] holds the saved default rather than a choice
-     *  made from the Networks panel — only such a filter is cleared when the
-     *  network turns out not to exist any more. */
+    /** True while [networkFilter] holds the saved default rather than a panel
+     *  choice — only such a filter is cleared when the network turns out not to
+     *  exist any more. */
     private var filterFromDefault = false
 
     /** Opens the list on the saved default network (no-op for "All", and after
@@ -147,65 +142,18 @@ class ChatListViewModel : LightViewModel<Unit>() {
         filterFromDefault = true
     }
 
-    /** The Networks panel's choice: a deliberate pick, so it outranks the
-     *  saved default and survives the staleness check above. */
+    /** The Networks panel's choice: deliberate, so it outranks the saved
+     *  default and survives the staleness check in [refresh]. */
     fun selectNetwork(network: String?) {
         filterFromDefault = false
         networkFilter.value = network
     }
 
     /**
-     * Contact-panel state for the long-press entry (2026-08-29): long-pressing
-     * a room row opens the same contact panel as the thread's name, seeded from
-     * the row's flags and polled while the panel is open so a Beeper-side
-     * toggle reaches it live (same pattern as ThreadViewModel's flag sync).
-     */
-    val panelMuted = MutableStateFlow(false)
-    val panelPinned = MutableStateFlow(false)
-    val panelArchived = MutableStateFlow(false)
-    private var panelRoomId: String? = null
-    private var panelFlagSyncJob: Job? = null
-
-    /** Seeds the panel from the row and starts the live flag poll. */
-    fun openContactPanel(room: LightServiceMethod.GetRooms.Room) {
-        // Kill any poll leaked by an earlier panel before starting this one:
-        // startPanelFlagSync's guard would otherwise keep polling the FIRST
-        // panel's room and clobber this panel's flags with them (2026-08-29:
-        // archive toggles flipped back to ARCHIVE after 3 s for exactly that).
-        panelFlagSyncJob?.cancel()
-        panelFlagSyncJob = null
-        panelRoomId = room.id
-        panelMuted.value = room.muted
-        panelPinned.value = room.pinned
-        panelArchived.value = room.archived
-        startPanelFlagSync(room.id)
-    }
-
-    /** Stops the poll when the panel is dismissed (X pops back to the list). */
-    fun closeContactPanel() {
-        panelFlagSyncJob?.cancel()
-        panelFlagSyncJob = null
-        panelRoomId = null
-    }
-
-    private fun startPanelFlagSync(roomId: String) {
-        if (panelFlagSyncJob?.isActive == true) return
-        panelFlagSyncJob = viewModelScope.launch {
-            while (true) {
-                delay(PANEL_FLAG_SYNC_MS)
-                val flags = ChatClient.getRoomFlags(roomId) ?: continue
-                panelMuted.value = flags.muted
-                panelPinned.value = flags.pinned
-                panelArchived.value = flags.archived
-            }
-        }
-    }
-
-    /**
      * Marks [room] read from the list (the swipe-right gesture): the companion
-     * posts the read receipt at the room's newest event and serves unread 0
-     * for it straight away (its pendingReadClear), so the quiet refresh below
-     * drops the asterisk without waiting for a sync round.
+     * posts the read receipt at the room's newest event and serves unread 0 for
+     * it straight away, so the quiet refresh drops the asterisk without waiting
+     * for a sync round.
      */
     fun markRoomRead(room: LightServiceMethod.GetRooms.Room) {
         val eventId = room.lastEventId ?: return
@@ -216,23 +164,61 @@ class ChatListViewModel : LightViewModel<Unit>() {
         }
     }
 
-    fun togglePanelMuted() {
-        val next = !panelMuted.value
-        panelMuted.value = next
-        panelRoomId?.let { viewModelScope.launch { ChatClient.setRoomMuted(it, next) } }
+    /**
+     * Contact-panel state for the long-press entry: long-pressing
+     * a room row opens the same contact panel as the thread's name, seeded from
+     * the row's flags (the repository's fresher roomFlags value wins) and kept
+     * live by the roomFlags flow collector while the panel is open, so a
+     * Beeper-side toggle reaches it (same pattern as ThreadViewModel's flag sync).
+     */
+    val panelMuted = MutableStateFlow(false)
+    val panelPinned = MutableStateFlow(false)
+    val panelArchived = MutableStateFlow(false)
+    private var panelRoomId: String? = null
+
+    init {
+        // Panel flags ride the repository's roomFlags flow (NO-SEAM, replaces
+        // the per-panel revision-wait job): keyed on [panelRoomId], so an open
+        // panel tracks exactly its room and a closed one (null) idles.
+        viewModelScope.launch {
+            MatrixRepository.roomFlags.collect { flags ->
+                val id = panelRoomId ?: return@collect
+                flags[id]?.let { f ->
+                    panelMuted.value = f.muted
+                    panelPinned.value = f.pinned
+                    panelArchived.value = f.archived
+                }
+            }
+        }
     }
 
-    fun togglePanelPinned() {
-        val next = !panelPinned.value
-        panelPinned.value = next
-        panelRoomId?.let { viewModelScope.launch { ChatClient.setRoomPinned(it, next) } }
+    /** Seeds the panel from the row (the flow's fresher value wins). */
+    fun openContactPanel(room: LightServiceMethod.GetRooms.Room) {
+        panelRoomId = room.id
+        MatrixRepository.roomFlags.value[room.id]?.let { f ->
+            panelMuted.value = f.muted
+            panelPinned.value = f.pinned
+            panelArchived.value = f.archived
+        } ?: run {
+            panelMuted.value = room.muted
+            panelPinned.value = room.pinned
+            panelArchived.value = room.archived
+        }
     }
 
-    fun togglePanelArchived() {
-        val next = !panelArchived.value
-        panelArchived.value = next
-        panelRoomId?.let { viewModelScope.launch { ChatClient.setRoomArchived(it, next) } }
+    /** Closing the panel (X pops back to the list) idles the collector. */
+    fun closeContactPanel() {
+        panelRoomId = null
     }
+
+    fun togglePanelMuted() =
+        viewModelScope.toggleAndPersist(panelMuted, { panelRoomId }, ChatClient::setRoomMuted)
+
+    fun togglePanelPinned() =
+        viewModelScope.toggleAndPersist(panelPinned, { panelRoomId }, ChatClient::setRoomPinned)
+
+    fun togglePanelArchived() =
+        viewModelScope.toggleAndPersist(panelArchived, { panelRoomId }, ChatClient::setRoomArchived)
 
     /**
      * One-shot launch request for the companion's POST_NOTIFICATIONS
@@ -248,19 +234,14 @@ class ChatListViewModel : LightViewModel<Unit>() {
 
     /**
      * Room-list scroll position, persisted across navigation so a thread exit
-     * returns the list to where it was instead of the top (feedback 2026-08-19:
-     * "select a room half way down the list, enter, exit — return half way
-     * down"). The screen saves it continuously and the list re-creates its
-     * LazyListState seeded from it on show (feedback 2026-08-20: the old
-     * scroll-after-compose restore flashed the top of the list first).
+     * returns the list to where it was instead of the top. The screen saves it continuously and the list re-creates its
+     * LazyListState seeded from it on show.
      */
     var savedScrollIndex = 0
     var savedScrollOffset = 0
 
     /**
-     * One POST_NOTIFICATIONS runtime request per process run (audit
-     * 2026-08-23: the server's message notifications never showed — the
-     * permission was never requested, importance=NONE). The request itself
+     * One POST_NOTIFICATIONS runtime request per process run. The request itself
      * goes through the SDK flow (ChatsPermissionActivity in the server).
      */
     var notificationPermissionRequested = false
@@ -297,34 +278,27 @@ class ChatListViewModel : LightViewModel<Unit>() {
     }
 
     /**
-     * Re-fetches the list while it stays visible (the companion's room-list
-     * cache fills in placeholders + updates live rooms in the background, so a
-     * periodic quiet refresh keeps the list current without user action).
-     *
-     * Revision gate (2026-09-01, the Beeper comparison): the poll first asks
-     * the list's cheap revision and only fetches the full (400-room) payload
-     * when it moved — an idle list costs one tiny binder read every 5 s, not
-     * the whole [GetRooms] transfer. The connection state still refreshes each
-     * tick so the offline banner stays live.
+     * Live list + connection updates while the screen is visible. The
+     * repository's flows drive them directly (NO-SEAM — the
+     * revision long-poll over the binder is gone): a room-list publish
+     * refetches the list (the [refresh] fetch shape is unchanged), a
+     * connection-state change refreshes the offline banner.
      */
     private fun startPolling() {
         if (pollJob?.isActive == true) return
         pollJob = viewModelScope.launch {
-            // Seed with the revision the show-time refresh reflected, so the
-            // first poll skips a list that hasn't moved since.
-            var lastRevision = ChatClient.roomListRevision()
-            while (true) {
-                delay(POLL_INTERVAL_MS)
-                val revision = ChatClient.roomListRevision()
-                // 0 = nothing published yet (cold restore) — the show-time
-                // refresh + retry budget handle settling, don't churn here.
-                if (revision > 0 && revision != lastRevision) {
-                    lastRevision = revision
-                    refresh(quiet = true)
-                } else {
-                    // List unchanged — keep the banner live with the tiny
-                    // connection read instead of the full payload.
-                    ChatClient.connectionState()?.let { connection.value = it }
+            var seeded = false
+            launch {
+                MatrixRepository.roomList.collect {
+                    // The collection-start snapshot is skipped: the show-time
+                    // refresh() (with its cold-start retries) owns the first
+                    // fetch; every publish after it refetches quietly.
+                    if (seeded) refresh(quiet = true) else seeded = true
+                }
+            }
+            launch {
+                MatrixRepository.connectionState.collect {
+                    connection.value = MatrixRepository.connectionState()
                 }
             }
         }
@@ -437,7 +411,6 @@ class ChatListViewModel : LightViewModel<Unit>() {
         // which can take several seconds after a fresh boot/reinstall.
         const val REFRESH_RETRIES = 10
         const val REFRESH_RETRY_DELAY_MS = 1_000L
-        const val POLL_INTERVAL_MS = 5_000L
         const val INITIAL_VISIBLE_COUNT = 20
         const val REVEAL_STEP = 20
     }
@@ -468,9 +441,7 @@ class ChatListScreen(sealedActivity: SealedLightActivity) :
 
     @Composable
     override fun Content() {
-        // Runtime permission for the server's message notifications (audit
-        // 2026-08-23: POST_NOTIFICATIONS was never requested → importance=NONE
-        // → ChatNotifier silently no-oped every message). The SDK flow routes
+        // Runtime permission for the server's message notifications. The SDK flow routes
         // the request through the server's ChatsPermissionActivity (AOSP
         // dialog). One request per process run.
         val permissionLauncher = rememberPermissionRequestLauncher(Manifest.permission.POST_NOTIFICATIONS)
@@ -483,14 +454,6 @@ class ChatListScreen(sealedActivity: SealedLightActivity) :
                 if (!granted) permissionLauncher?.launch()
             }
         }
-        // The tool-local settings back the editors' keyboard choice (Settings →
-        // Device Keyboard), so load them on the entry screen: search and the
-        // login field editors are reachable without ever opening Settings or a
-        // thread, and an unloaded preference would silently read as the default.
-        LaunchedEffect(Unit) {
-            ChatSettings.load(lightContext)
-            viewModel.applyDefaultNetwork(ChatSettings.defaultNetwork.value)
-        }
         val rooms by viewModel.rooms.collectAsState()
         val loading by viewModel.loading.collectAsState()
         val account by viewModel.account.collectAsState()
@@ -498,11 +461,16 @@ class ChatListScreen(sealedActivity: SealedLightActivity) :
         val visibleCount by viewModel.visibleCount.collectAsState()
         val pendingRoom by viewModel.openRoom.collectAsState()
         val permissionComponent by viewModel.notificationPermissionComponent.collectAsState()
+        // The tool-local settings back the keyboard choice and the default
+        // network, and the list is the entry screen: search and the login
+        // editors are reachable without opening Settings or a thread.
+        LaunchedEffect(Unit) {
+            ChatSettings.load(lightContext)
+            viewModel.applyDefaultNetwork(ChatSettings.defaultNetwork.value)
+        }
         val networkFilter by viewModel.networkFilter.collectAsState()
         val themeColors by LightThemeController.colors.collectAsState()
-        // The saved position seeds the list state directly (feedback
-        // 2026-08-20: restoring with a post-compose scroll flashed the top of
-        // the list for a frame). The ViewModel keeps the position across
+        // The saved position seeds the list state directly. The ViewModel keeps the position across
         // navigation (the composition is disposed on navigate), so a fresh
         // composition picks it up with no flash.
         val listState = rememberLazyListState(
@@ -510,15 +478,19 @@ class ChatListScreen(sealedActivity: SealedLightActivity) :
             initialFirstVisibleItemScrollOffset = viewModel.savedScrollOffset,
         )
 
-        // Phase 7 filters: the network selector narrows the list; the full
-        // room set stays in the ViewModel. (The unread toggle moved to the
-        // Search screen, feedback 2026-08-21.) Archived rooms hide unless
-        // pinned (pinned wins, 2026-08-28); pinned rooms sort to the top —
+        // Filters: the network selector narrows the list; the full
+        // room set stays in the ViewModel. Archived rooms hide unless
+        // pinned (pinned wins); pinned rooms sort to the top —
         // stable, so server recency holds within the pinned group.
+        // Rooms with no stampable message (ts 0: bridge integration
+        // rooms, notice/state-only rooms the resolver parked) hide
+        // like Beeper's inbox — they carry no chat content, only
+        // Contacts/Search still list them.
         val filteredRooms = remember(rooms, networkFilter) {
             rooms.filter { room ->
                 (networkFilter == null || room.network == networkFilter) &&
-                    !(room.archived && !room.pinned) // archived hidden unless pinned wins
+                    !(room.archived && !room.pinned) && // archived hidden unless pinned wins
+                    !(!room.pinned && room.lastTimestampMs == 0L)
             }.sortedByDescending { it.pinned } // stable — server recency holds within groups
         }
         // Network labels for the Networks panel, from the rooms the companion
@@ -557,13 +529,12 @@ class ChatListScreen(sealedActivity: SealedLightActivity) :
             }
         }
 
-        // Feedback pass: switching the filter (network selection) returns the
+        // Switching the filter (network selection) returns the
         // list to the top — the user expects the newest conversations, not a
         // stale scroll position from the previous filter. Guarded so it fires
         // only on an actual filter CHANGE: the screen fully re-composes on
         // every thread return, and an ungated effect would yank the list to
-        // the top each time (feedback 2026-08-23: "exit a thread — bounce
-        // back to the top of the room list"). The guard remembers the filter
+        // the top each time. The guard remembers the filter
         // that last triggered the reset; a fresh composition re-initializes
         // it to the current filter, so a plain return is a no-op.
         var filterAtLastReset by remember { mutableStateOf(networkFilter) }
@@ -586,12 +557,11 @@ class ChatListScreen(sealedActivity: SealedLightActivity) :
             }
         }
 
-        // Feedback pass: a new-message bump reorders the list; when the user
+        // A new-message bump reorders the list; when the user
         // was at (or within a row of) the top, keep the newest conversation
         // pinned at index 0 — LazyColumn anchors by key, so the room that slid
         // down stays in view and the bumped room hides just above the
-        // viewport without this (feedback 2026-08-17: "the room bumps to the
-        // top, but the panel requires scrolling up to see it").
+        // viewport without this.
         LaunchedEffect(filteredRooms.firstOrNull()?.id) {
             if (listState.firstVisibleItemIndex <= 1) {
                 listState.requestScrollToItem(0)
@@ -615,12 +585,12 @@ class ChatListScreen(sealedActivity: SealedLightActivity) :
                         .fillMaxSize()
                         .background(LightThemeTokens.colors.background),
                 ) {
-                // Feedback pass: with a network filter active the list gets a
+                // With a network filter active the list gets a
                 // context top bar naming the network ("WhatsApp"); on "All"
                 // it stays a bare list home (the 2-gu bar). A filtered list is
                 // a standard top-bar screen — the top bar REPLACES the 2-gu
-                // bar, so the header height matches every other titled screen
-                // (feedback 2026-08-19). The null left/right slots render as
+                // bar, so the header height matches every other titled screen.
+                // The null left/right slots render as
                 // spacers, so the title stays centered.
                 val activeAccount = networkFilter
                 if (activeAccount != null) {
@@ -647,7 +617,7 @@ class ChatListScreen(sealedActivity: SealedLightActivity) :
                                 // flash "No conversations" while it's still running
                                 // (the retry budget can exhaust before rooms land).
                                 loading && rooms.isEmpty() -> StatusText(
-                                    if (connecting) DOWNLOADING_TEXT else "Loading…",
+                                    if (connecting) DOWNLOADING_TEXT else "loading…",
                                 )
                                 filteredRooms.isNotEmpty() -> LightLazyScrollView(
                                     // Rows are ~70dp; a uniform estimate keeps the lazy
@@ -697,7 +667,7 @@ class ChatListScreen(sealedActivity: SealedLightActivity) :
                             onClick = { openContacts() },
                             contentDescription = "Contacts",
                         ),
-                        // Feedback pass: the network filter lives behind the
+                        // The network filter lives behind the
                         // bottom-right menu (3-dash) which opens the Networks
                         // panel; the active network shows in the context top bar.
                         LightBarButton.LightIcon(
@@ -723,7 +693,7 @@ class ChatListScreen(sealedActivity: SealedLightActivity) :
     }
 
     /**
-     * The contact overlay from the room list (2026-08-29): long-pressing a row
+     * The contact overlay from the room list: long-pressing a row
      * opens the same contact panel as the thread's top-bar name, seeded from
      * the row's flags and polling the companion while open; the X pops back to
      * the list.
@@ -750,10 +720,10 @@ class ChatListScreen(sealedActivity: SealedLightActivity) :
     }
 
     private fun openContacts() {
-        // The starting point carries in (2026-08-30): opened from All the
+        // The starting point carries in: opened from All the
         // panel shows every contact; from a filtered list only that network's.
         // The list's current census seeds the panel's first frame — no empty
-        // flash while the first GetRooms round-trips (feedback 2026-09-01).
+        // flash while the first GetRooms round-trips.
         navigateTo(
             screenFactory = { ContactsScreen(it, viewModel.networkFilter.value, viewModel.rooms.value) },
         )
@@ -773,19 +743,15 @@ private fun RoomRow(
 ) {
     val currentOnOpen by rememberUpdatedState(onOpen)
     val currentOnLongPress by rememberUpdatedState(onLongPress)
+    val buzz = rememberHapticBuzz()
     val currentOnMarkRead by rememberUpdatedState(onMarkRead)
-    val haptic = LocalHapticFeedback.current
-    val currentHapticsEnabled by rememberUpdatedState(LocalHapticsEnabled.current)
-    // Swipe right to mark read. The row follows the finger (clamped to the
-    // right, up to [SwipeTravel]) so the gesture reads as a drag rather than a
-    // dead zone, and springs back on release whether or not it passed the
-    // threshold. Only unread rows respond — a swipe on a read row is inert.
+    // Swipe right to mark read. The row follows the finger (clamped right, up
+    // to [SwipeTravel]) so the gesture reads as a drag rather than a dead zone,
+    // and springs back on release whether or not it passed the threshold. Only
+    // unread rows respond — a swipe on a read row is inert.
     val unread = room.unreadCount > 0
     var dragOffset by remember(room.id) { mutableStateOf(0f) }
-    val swipeOffset by animateFloatAsState(
-        targetValue = dragOffset,
-        label = "roomRowSwipe",
-    )
+    val swipeOffset by animateFloatAsState(targetValue = dragOffset, label = "roomRowSwipe")
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -799,9 +765,7 @@ private fun RoomRow(
                         val passed = dragOffset >= trigger
                         dragOffset = 0f
                         if (passed) {
-                            if (currentHapticsEnabled) {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            }
+                            buzz()
                             currentOnMarkRead()
                         }
                     },
@@ -812,8 +776,8 @@ private fun RoomRow(
                     dragOffset = (dragOffset + dragAmount).coerceIn(0f, travel)
                 }
             }
-            // Long-press opens the contact panel (2026-08-29). Trigger-only
-            // haptics (LP3 feedback 2026-09-03): the buzz fires when the
+            // Long-press opens the contact panel. Trigger-only
+            // haptics: the buzz fires when the
             // gesture actually completes — on a genuine tap into the room
             // (finger-up inside the row; a scroll drag never reaches onTap)
             // and when the long-press opens the panel — never on finger-down,
@@ -821,27 +785,21 @@ private fun RoomRow(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onTap = {
-                        if (currentHapticsEnabled) {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        }
+                        buzz()
                         currentOnOpen()
                     },
                     onLongPress = {
-                        if (currentHapticsEnabled) {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        }
+                        buzz()
                         currentOnLongPress()
                     },
                 )
             }
-            // Left matches the Phone tool's recents rows (LP3-verified
-            // 2026-08-21): 0.5-gu margin, then the unread star's 1-gu slot.
+            // Left matches the Phone tool's recents rows: 0.5-gu margin, then the unread star's 1-gu slot.
             // The room name lands at 2.75 gu — flush with the bottom-left
             // bottom-bar icon's left edge (the SDK centers the 2-gu icon in
             // a 3.5-gu touch box, so the icon sits at 2 + 0.75 gu). The
             // right leaves the time clear of the scrollbar. 12dp vertical
-            // padding fits exactly 6 rows on the panel (LP3 480dpi, user
-            // 2026-08-29 — 17dp fit only 5 on the real device).
+            // padding fits exactly 6 rows on the panel.
             .padding(start = 0.5f.gridUnitsAsDp(), end = 0.5f.gridUnitsAsDp(), top = 12.dp, bottom = 12.dp),
     ) {
         Row(
@@ -853,10 +811,7 @@ private fun RoomRow(
             // The unread marker is a large asterisk in the row's leading
             // buffer: 0.5-gu margin, the star's 1-gu slot, then a 0.25-gu gap
             // to the room name at 1.75 gu — the asterisk lands visually
-            // centered between the left edge and the name (feedback
-            // 2026-08-23: the original 1.25-gu gap left the space after the
-            // asterisk dwarfing the space before it; the name moved left to
-            // balance it). The slot stays even without a star so names never
+            // centered between the left edge and the name. The slot stays even without a star so names never
             // shift.
             Box(modifier = Modifier.width(1f.gridUnitsAsDp())) {
                 if (room.unreadCount > 0) {
@@ -880,11 +835,9 @@ private fun RoomRow(
                 )
             }
             // The latest-message time sits at the row's right, on the name
-            // line like the built-in list, with the short hand format
-            // (feedback 2026-08-17: back on the right after the under-name
-            // Detail date; the unread count was removed at the same time).
-            // Solid white, same as everything else (feedback 2026-08-21).
-            // Pinned rows drop the latest-message time (user, 2026-08-28).
+            // line like the built-in list, with the short hand format.
+            // Solid white, same as everything else.
+            // Pinned rows drop the latest-message time.
             if (!room.pinned) {
                 LightText(
                     text = formatRelativeTimestamp(room.lastTimestampMs),
@@ -908,27 +861,28 @@ private fun OfflineBanner(text: String) {
 
 @Composable
 private fun StatusText(text: String) {
-    // Centered like the LP3's own loading state (LP3 feedback 2026-09-03):
-    // the "Loading…" used to sit top-left.
+    // Centered like the LP3's own loading state:
+    // the "Loading…" used to sit top-left. Bottom padding biases the center
+    // slightly upward — optical centering.
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(bottom = 4f.gridUnitsAsDp()),
         contentAlignment = Alignment.Center,
     ) {
         LightText(
             text = text,
-            variant = LightTextVariant.Copy,
+            // One size up from Copy (feedback 2026-09-06).
+            variant = LightTextVariant.Heading,
             align = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 2f.gridUnitsAsDp()),
         )
     }
 }
 
-/** How far a room row follows a mark-read swipe before it stops travelling —
- *  about the width of the leading marker slot plus the name's indent, so the
- *  row visibly moves without sliding out from under its own text. */
+/** How far a room row follows a mark-read swipe before it stops travelling. */
 private val SwipeTravel = 72.dp
 
-/** How far the swipe has to get to actually mark the room read. Comfortably
- *  past the touch slop, comfortably short of [SwipeTravel], so a deliberate
- *  drag lands it and a stray horizontal wobble while scrolling does not. */
+/** How far the swipe has to get to actually mark the room read: past the touch
+ *  slop, short of [SwipeTravel], so scrolling the list never trips it. */
 private val SwipeTrigger = 48.dp

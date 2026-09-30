@@ -39,7 +39,7 @@ jobs:
           repository: fenleon/light-sdk
           # Pinned so a change upstream can't silently break the build. Bump
           # this when the tool needs a newer SDK patch.
-          ref: 07b23bb7a16cee60245a298963670ce6b466f4a0
+          ref: e23141adb902aed40975c589ef7bc727b3669667
           path: light-sdk
 
       - name: Set up JDK 17
