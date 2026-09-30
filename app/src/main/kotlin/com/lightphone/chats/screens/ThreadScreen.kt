@@ -2149,6 +2149,22 @@ private fun MessageRow(
                     )
                 }
             } else {
+                // A reply carries Matrix's fallback quote at the top of its
+                // body. The quote renders as a quiet line above the reply —
+                // Superfine, one line, ellipsised — the same grammar as the
+                // "forwarded" and "edited" tags, so the answered message is
+                // identifiable without the row growing into a bubble. The body
+                // below is the reply alone.
+                val (replyQuote, bodyText) = splitReplyQuote(message.body)
+                if (replyQuote != null) {
+                    LightText(
+                        text = "> $replyQuote",
+                        variant = LightTextVariant.Superfine,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 1.dp),
+                    )
+                }
                 if (message.forwarded) {
                     // Forwarded text — incoming and own share the grammar: the
                     // ↷ glyph leads the body on incoming rows, trails it on
@@ -2185,24 +2201,8 @@ private fun MessageRow(
                                     modifier = Modifier.weight(1f, fill = false),
                                 )
                             } else {
-                // A reply carries Matrix's fallback quote at the top of its
-                // body. The quote renders as a quiet line above the reply —
-                // Superfine, one line, ellipsised — the same grammar as the
-                // "forwarded" and "edited" tags, so the answered message is
-                // identifiable without the row growing into a bubble. The body
-                // below is the reply alone.
-                val (replyQuote, bodyText) = splitReplyQuote(message.body)
-                if (replyQuote != null) {
-                    LightText(
-                        text = "> $replyQuote",
-                        variant = LightTextVariant.Superfine,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 1.dp),
-                    )
-                }
                                 LightText(
-                                    text = bodyText,
+                                    text = message.body,
                                     variant = LightTextVariant.Paragraph,
                                 )
                             }

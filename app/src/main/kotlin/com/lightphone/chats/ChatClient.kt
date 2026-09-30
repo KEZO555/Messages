@@ -93,8 +93,12 @@ object ChatClient {
     suspend fun sendMessage(
         roomId: String,
         body: String,
+        /** Set by the composer's REPLY flow: the repository hangs an
+         *  m.in_reply_to relation on the send, so bridged networks show it
+         *  quoting the original. */
+        replyToEventId: String? = null,
     ): LightServiceMethod.SendMessage.Response? =
-        runCatching { MatrixRepository.sendMessage(roomId, body, null) }.getOrNull()
+        runCatching { MatrixRepository.sendMessage(roomId, body, replyToEventId) }.getOrNull()
 
     /**
      * Re-sends a locally-failed message: the repository clears the outbox error
